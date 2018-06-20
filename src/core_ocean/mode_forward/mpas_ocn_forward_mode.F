@@ -110,7 +110,7 @@ module ocn_forward_mode
       type (block_type), pointer :: block
 
       integer :: err_tmp
-      integer, pointer :: nVertLevels
+      integer, pointer :: nVertLevels, reduced_precision_digits
       real (kind=RKIND) :: maxDensity, maxDensity_global
       real (kind=RKIND), dimension(:), pointer :: meshDensity
       type (mpas_pool_type), pointer :: meshPool
@@ -123,7 +123,8 @@ module ocn_forward_mode
       type (MPAS_TimeInterval_type) :: timeStep
       type (MPAS_TimeInterval_type) :: alarmTimeStep
 
-      logical, pointer :: config_do_restart, config_read_nearest_restart, config_filter_btr_mode, config_conduct_tests
+      logical, pointer :: config_do_restart, config_read_nearest_restart, config_filter_btr_mode, &
+                          config_conduct_tests, config_use_reduced_precision
       character (len=StrKIND), pointer :: config_vert_coord_movement, config_pressure_gradient_type
       character (len=StrKIND), pointer :: config_surface_salinity_monthly_restoring_compute_interval
 
@@ -152,6 +153,8 @@ module ocn_forward_mode
                                 config_use_surface_salinity_monthly_restoring)
       call mpas_pool_get_config(domain % configs, 'config_surface_salinity_monthly_restoring_compute_interval', &
               config_surface_salinity_monthly_restoring_compute_interval)
+      call mpas_pool_get_config(domain % configs, 'config_use_reduced_precision', config_use_reduced_precision)
+     
       !
       ! Read input data for model
       !
@@ -188,7 +191,12 @@ module ocn_forward_mode
       call mpas_timer_stop('reset_io_alarms')
 
       ! Initialize submodules before initializing blocks.
-      call ocn_timestep_init(ierr)
+      
+      if (config_use_reduced_precision) then
+	 call ocn_reduced_precision_init(ierr)
+      else
+         call ocn_timestep_init(ierr)
+      end if
 
       call ocn_thick_hadv_init(err_tmp)
       ierr = ior(ierr, err_tmp)
@@ -461,7 +469,7 @@ module ocn_forward_mode
 
       type (domain_type), intent(inout) :: domain
 
-      integer :: itimestep, err
+      integer :: itimestep, err, reduced_precision_digits
       real (kind=RKIND) :: dt
       type (block_type), pointer :: block_ptr
 
@@ -484,6 +492,7 @@ module ocn_forward_mode
       logical, pointer :: config_use_ecosysTracers
       logical, pointer :: config_use_activeTracers_surface_restoring
       logical, pointer :: config_use_surface_salinity_monthly_restoring
+      logical, pointer :: config_use_reduced_precision
 
       ierr = 0
 
@@ -495,7 +504,8 @@ module ocn_forward_mode
                                                    config_use_activeTracers_surface_restoring)
       call mpas_pool_get_config(domain % configs, 'config_use_surface_salinity_monthly_restoring',  &
                                                    config_use_surface_salinity_monthly_restoring)
-
+      call mpas_pool_get_config(domain % configs, 'config_use_reduced_precision', &
+                                                   config_use_reduced_precision) 
       ! Eventually, dt should be domain specific
       timeStep = mpas_get_clock_timestep(domain % clock, ierr=ierr)
       call mpas_get_timeInterval(timeStep, dt=dt)
@@ -586,7 +596,11 @@ module ocn_forward_mode
 #endif
          !$omp parallel default(firstprivate) shared(domain, dt, timeStamp)
 
-         call ocn_timestep(domain, dt, timeStamp)
+         if (config_use_reduced_precision) then
+              call ocn_reduced_precision(domain, dt, timeStamp)
+         else
+              call ocn_timestep(domain, dt, timeStamp)
+         end if
 
          !$omp end parallel
 
