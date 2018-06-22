@@ -192,8 +192,6 @@ module ocn_forward_mode
 
       ! Initialize submodules before initializing blocks.
      
-      print *, config_use_reduced_precision      
-
       if (config_use_reduced_precision) then
 	 call ocn_reduced_precision_init(ierr)
       else
