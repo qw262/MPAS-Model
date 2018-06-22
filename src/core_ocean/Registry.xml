@@ -232,7 +232,7 @@
                                        description="If true, reduced precision floating-point implementation is used."
                                        possible_values=".true. or .false."
                 />
-                <nml_option name="config_reduced_precision_digits" type="integer" default_value="1" units="unitless"
+                <nml_option name="config_reduced_precision_digits" type="integer" default_value="10" units="unitless"
                                         description="Round to specified number of decimal digits."
                                         possible_values="any positive integer less than or equal to 17"
                 />

@@ -110,7 +110,7 @@ module ocn_forward_mode
       type (block_type), pointer :: block
 
       integer :: err_tmp
-      integer, pointer :: nVertLevels, reduced_precision_digits
+      integer, pointer :: nVertLevels
       real (kind=RKIND) :: maxDensity, maxDensity_global
       real (kind=RKIND), dimension(:), pointer :: meshDensity
       type (mpas_pool_type), pointer :: meshPool
@@ -191,7 +191,9 @@ module ocn_forward_mode
       call mpas_timer_stop('reset_io_alarms')
 
       ! Initialize submodules before initializing blocks.
-      
+     
+      print *, config_use_reduced_precision      
+
       if (config_use_reduced_precision) then
 	 call ocn_reduced_precision_init(ierr)
       else
@@ -469,7 +471,7 @@ module ocn_forward_mode
 
       type (domain_type), intent(inout) :: domain
 
-      integer :: itimestep, err, reduced_precision_digits
+      integer :: itimestep, err
       real (kind=RKIND) :: dt
       type (block_type), pointer :: block_ptr
 
