@@ -468,7 +468,7 @@ module ocn_forward_mode
    function ocn_forward_mode_run(domain) result(ierr)!{{{
 
       type (domain_type), intent(inout) :: domain
-
+     
       integer :: itimestep, err
       real (kind=RKIND) :: dt
       type (block_type), pointer :: block_ptr
@@ -493,6 +493,7 @@ module ocn_forward_mode
       logical, pointer :: config_use_activeTracers_surface_restoring
       logical, pointer :: config_use_surface_salinity_monthly_restoring
       logical, pointer :: config_use_reduced_precision
+      integer, pointer :: config_reduced_precision_digits
 
       ierr = 0
 
@@ -505,7 +506,10 @@ module ocn_forward_mode
       call mpas_pool_get_config(domain % configs, 'config_use_surface_salinity_monthly_restoring',  &
                                                    config_use_surface_salinity_monthly_restoring)
       call mpas_pool_get_config(domain % configs, 'config_use_reduced_precision', &
-                                                   config_use_reduced_precision) 
+                                                   config_use_reduced_precision)
+      call mpas_pool_get_config(domain % configs, 'config_reduced_precision_digits', &
+                                                   config_reduced_precision_digits)
+ 
       ! Eventually, dt should be domain specific
       timeStep = mpas_get_clock_timestep(domain % clock, ierr=ierr)
       call mpas_get_timeInterval(timeStep, dt=dt)
@@ -597,7 +601,8 @@ module ocn_forward_mode
          !$omp parallel default(firstprivate) shared(domain, dt, timeStamp)
 
          if (config_use_reduced_precision) then
-              call ocn_reduced_precision(domain, dt, timeStamp)
+              call ocn_reduced_precision(domain, config_reduced_precision_digits, dt, timeStamp)
+              print*, config_reduced_precision_digits
          else
               call ocn_timestep(domain, dt, timeStamp)
          end if
