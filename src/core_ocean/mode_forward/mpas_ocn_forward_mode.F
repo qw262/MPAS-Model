@@ -124,7 +124,7 @@ module ocn_forward_mode
       type (MPAS_TimeInterval_type) :: alarmTimeStep
 
       logical, pointer :: config_do_restart, config_read_nearest_restart, config_filter_btr_mode, &
-                          config_conduct_tests, config_use_reduced_precision
+                          config_conduct_tests
       character (len=StrKIND), pointer :: config_vert_coord_movement, config_pressure_gradient_type
       character (len=StrKIND), pointer :: config_surface_salinity_monthly_restoring_compute_interval
 
@@ -153,7 +153,6 @@ module ocn_forward_mode
                                 config_use_surface_salinity_monthly_restoring)
       call mpas_pool_get_config(domain % configs, 'config_surface_salinity_monthly_restoring_compute_interval', &
               config_surface_salinity_monthly_restoring_compute_interval)
-      call mpas_pool_get_config(domain % configs, 'config_use_reduced_precision', config_use_reduced_precision)
      
       !
       ! Read input data for model
@@ -192,11 +191,7 @@ module ocn_forward_mode
 
       ! Initialize submodules before initializing blocks.
      
-      if (config_use_reduced_precision) then
-	 call ocn_reduced_precision_init(ierr)
-      else
-         call ocn_timestep_init(ierr)
-      end if
+      call ocn_timestep_init(ierr)
 
       call ocn_thick_hadv_init(err_tmp)
       ierr = ior(ierr, err_tmp)
@@ -492,8 +487,6 @@ module ocn_forward_mode
       logical, pointer :: config_use_ecosysTracers
       logical, pointer :: config_use_activeTracers_surface_restoring
       logical, pointer :: config_use_surface_salinity_monthly_restoring
-      logical, pointer :: config_use_reduced_precision
-      integer, pointer :: config_reduced_precision_digits
 
       ierr = 0
 
@@ -505,10 +498,6 @@ module ocn_forward_mode
                                                    config_use_activeTracers_surface_restoring)
       call mpas_pool_get_config(domain % configs, 'config_use_surface_salinity_monthly_restoring',  &
                                                    config_use_surface_salinity_monthly_restoring)
-      call mpas_pool_get_config(domain % configs, 'config_use_reduced_precision', &
-                                                   config_use_reduced_precision)
-      call mpas_pool_get_config(domain % configs, 'config_reduced_precision_digits', &
-                                                   config_reduced_precision_digits)
  
       ! Eventually, dt should be domain specific
       timeStep = mpas_get_clock_timestep(domain % clock, ierr=ierr)
@@ -600,12 +589,7 @@ module ocn_forward_mode
 #endif
          !$omp parallel default(firstprivate) shared(domain, dt, timeStamp)
 
-         if (config_use_reduced_precision) then
-              call ocn_reduced_precision(domain, config_reduced_precision_digits, dt, timeStamp)
-              print*, config_reduced_precision_digits
-         else
-              call ocn_timestep(domain, dt, timeStamp)
-         end if
+         call ocn_timestep(domain, dt, timeStamp)
 
          !$omp end parallel
 

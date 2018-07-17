@@ -33,29 +33,14 @@ module ocn_time_integration
    use ocn_constants
    use ocn_time_integration_rk4
    use ocn_time_integration_split
+   use ocn_rounding
 
    implicit none
    private
    save
 
    public :: ocn_timestep, &
-             ocn_timestep_init, &
-	     ocn_reduced_precision, &
-             ocn_reduced_precision_init
-   
-   interface
-     subroutine digitround(var, ndigits) bind(C,NAME="digitround")
-          use, intrinsic :: ISO_C_Binding, only : C_INT, C_DOUBLE
-          real(KIND=C_DOUBLE), value   :: var
-          integer(C_INT),      value   :: ndigits
-     end subroutine digitround
-
-     subroutine bittruncate(sum, nbits) bind(C,NAME="bittruncate")
-          use, intrinsic :: ISO_C_Binding, only : C_INT, C_DOUBLE
-          real(KIND=C_DOUBLE), value   :: sum
-          integer(C_INT),      value   :: nbits
-     end subroutine bittruncate
-   end interface
+             ocn_timestep_init
 
    !--------------------------------------------------------------------
    !
@@ -108,6 +93,9 @@ module ocn_time_integration
       type (domain_type), intent(inout) :: domain
       real (kind=RKIND), intent(in) :: dt
       character(len=*), intent(in) :: timeStamp
+      
+      integer, pointer :: config_reduced_precision_digits
+      logical, pointer :: config_use_reduced_precision
 
       type (dm_info) :: dminfo
       type (block_type), pointer :: block
@@ -118,15 +106,20 @@ module ocn_time_integration
       real (kind=RKIND), pointer :: daysSinceStartOfSim
       character (len=StrKIND), pointer :: simulationStartTime
       type (MPAS_Time_type) :: xtime_timeType, simulationStartTime_timeType
-
-      print*, "Running with full precision!"
-
+     
       if (rk4On) then
          call ocn_time_integrator_rk4(domain, dt)
       elseif (splitOn) then
          call ocn_time_integrator_split(domain, dt)
      endif
+     
+     call mpas_pool_get_config(domain % configs, 'config_use_reduced_precision', config_use_reduced_precision)
+     call mpas_pool_get_config(domain % configs, 'config_reduced_precision_digits', config_reduced_precision_digits)
 
+     if (config_use_reduced_precision) then
+        call rounding(domain, config_reduced_precision_digits)
+     endif
+    
      block => domain % blocklist
      do while (associated(block))
         call mpas_pool_get_subpool(block % structs, 'state', statePool)
@@ -179,179 +172,6 @@ module ocn_time_integration
 
    end subroutine ocn_timestep_init!}}}
    
-!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-!
-!  ocn_reduced_precision
-!
-!> \brief MPAS ocean time integration driver
-!> \author June Wu
-!> \date   August 2018
-!> \details
-!>  This routine handles a single timestep for the ocean. It determines
-!>  the time integrator that will be used for the run, and calls the
-!>  appropriate one.
-!
-!-----------------------------------------------------------------------
-
-   subroutine ocn_reduced_precision(domain, config_reduced_precision_digits, dt, timeStamp)!{{{
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   ! Advance model state forward in time by the specified time step
-   !
-   ! Input: domain - current model state in time level 1 (e.g., time_levs(1)state%h(:,:))
-   !                 plus mesh meta-data
-   ! Output: domain - upon exit, time level 2 (e.g., time_levs(2)%state%h(:,:)) contains
-   !                  model state advanced forward in time by dt seconds
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-      implicit none      
-      
-      type (domain_type), intent(inout) :: domain
-      integer, intent(in) :: config_reduced_precision_digits
-      real (kind=RKIND), intent(in) :: dt
-      character(len=*), intent(in) :: timeStamp
-      
-      integer :: iCell, iEdge, k
-      
-      type (dm_info) :: dminfo
-      type (block_type), pointer :: block
-
-      type (mpas_pool_type), pointer :: diagnosticsPool, statePool, meshPool, tracersPool
-
-      character (len=StrKIND), pointer :: xtime
-      real (kind=RKIND), pointer :: daysSinceStartOfSim
-      character (len=StrKIND), pointer :: simulationStartTime
-      type (MPAS_Time_type) :: xtime_timeType, simulationStartTime_timeType
-      
-      ! Dimensions
-      integer :: nCells, nEdges
-      integer, pointer :: nCellsPtr, nEdgesPtr, nVertLevels, num_tracersGroup, startIndex, endIndex
-      integer, pointer :: indexTemperature, indexSalinity
-      integer, dimension(:), pointer :: nCellsArray, nEdgesArray 
-
-      ! State Array Pointers
-      real (kind=RKIND), dimension(:,:), pointer :: normalVelocity
-      real (kind=RKIND), dimension(:,:), pointer :: layerThickness
-      real (kind=RKIND), dimension(:,:,:), pointer :: tracersGroup
-      
-      ! Mesh Array Pointers
-      integer, dimension(:), pointer :: maxLevelCell, maxLevelEdgeTop, nEdgesOnEdge, nEdgesOnCell
-      integer, dimension(:,:), pointer :: cellsOnEdge, edgeMask, edgesOnEdge
-      integer, dimension(:,:), pointer :: edgesOnCell, edgeSignOnCell
-
-      print*, "Running with reduced precision!"
-
-      if (rk4On) then
-         call ocn_time_integrator_rk4(domain, dt)
-      elseif (splitOn) then
-         call ocn_time_integrator_split(domain, dt)
-     endif
-     
-     ! Obtain State Array
-     block => domain % blocklist
-     do while (associated(block))
-        call mpas_pool_get_dimension(block % dimensions, 'nCells', nCellsPtr)
-        call mpas_pool_get_dimension(block % dimensions, 'nEdges', nEdgesPtr)
-        call mpas_pool_get_dimension(block % dimensions, 'nCellsArray', nCellsArray)
-        call mpas_pool_get_dimension(block % dimensions, 'nEdgesArray', nEdgesArray)
-        call mpas_pool_get_dimension(block % dimensions, 'nVertLevels', nVertLevels)
-
-        call mpas_pool_get_subpool(block % structs, 'state', statePool)
-        call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-        call mpas_pool_get_subpool(statePool, 'tracers', tracersPool)
-        call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)        
-
-        call mpas_pool_get_dimension(tracersPool, 'index_salinity', indexSalinity)
-        call mpas_pool_get_dimension(tracersPool, 'index_temperature', indexTemperature)
-
-        call mpas_pool_get_array(statePool, 'normalVelocity', normalVelocity, 1)
-        call mpas_pool_get_array(statePool, 'layerThickness', layerThickness, 1)
-        call mpas_pool_get_array(tracersPool, 'activeTracers', tracersGroup, 1)
-        call mpas_pool_get_array(meshPool, 'maxLevelCell', maxLevelCell)
-     
-        nCells = nCellsPtr
-        nEdges = nEdgesPtr
-        
-        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        !
-        !
-        ! Rounding Procedures 
-        !
-        !              
-        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        
-        !$omp do schedule(runtime) private(k)
-        do iCell = 1, nCells
-           do k = 1, maxLevelCell(iCell)
-              layerThickness(k,iCell) = 0.0
-              tracersGroup(indexTemperature, k, iCell) = 0.0
-              tracersGroup(indexSalinity, k, iCell) = 0.0
-           end do
-        end do
-        !$omp end do
-
-        !$omp do schedule(runtime) private(k)
-        do iEdge = 1, nEdges
-           do k = 1, nVertLevels
-              normalVelocity(k, iEdge) = 0.0
-           end do
-        end do
-        !$omp end do
-
-        block => block % next
-     end do
-
-     block => domain % blocklist
-     do while (associated(block))
-        call mpas_pool_get_subpool(block % structs, 'state', statePool)
-        call mpas_pool_get_subpool(block % structs, 'diagnostics', diagnosticsPool)
-        call mpas_pool_get_subpool(block % structs, 'mesh', meshPool)
-
-        call mpas_pool_get_array(diagnosticsPool, 'xtime', xtime)
-
-        xtime = timeStamp
-
-        ! compute time since start of simulation, in days
-        call mpas_pool_get_array(diagnosticsPool, 'simulationStartTime', simulationStartTime)
-        call mpas_pool_get_array(diagnosticsPool, 'daysSinceStartOfSim',daysSinceStartOfSim)
-        call mpas_set_time(xtime_timeType, dateTimeString=xtime)
-        call mpas_set_time(simulationStartTime_timeType, dateTimeString=simulationStartTime)
-        call mpas_get_timeInterval(xtime_timeType - simulationStartTime_timeType,dt=daysSinceStartOfSim)
-
-        !$omp single
-        daysSinceStartOfSim = daysSinceStartOfSim*days_per_second
-        !$omp end single
-
-        block => block % next
-     end do
-
-   end subroutine ocn_reduced_precision!}}}
-
-   subroutine ocn_reduced_precision_init(err)!{{{
-
-      integer, intent(out) :: err
-
-      character (len=StrKIND), pointer :: config_time_integrator
-
-      err = 0
-
-      call mpas_pool_get_config(ocnConfigs, 'config_time_integrator', config_time_integrator)
-
-      rk4On = .false.
-      splitOn = .false.
-
-      if (trim(config_time_integrator) == 'RK4') then
-          rk4On = .true.
-      elseif (trim(config_time_integrator) == 'split_explicit' &
-          .or.trim(config_time_integrator) == 'unsplit_explicit') then
-          splitOn = .true.
-      else
-          err = 1
-          call mpas_log_write('Incorrect choice for config_time_integrator:' // trim(config_time_integrator) // &
-             '   choices are: RK4, split_explicit, unsplit_explicit', MPAS_LOG_CRIT)
-      endif
-
-   end subroutine ocn_reduced_precision_init!}}}
-
 end module ocn_time_integration
 
 ! vim: foldmethod=marker
