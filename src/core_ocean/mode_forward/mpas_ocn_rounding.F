@@ -109,7 +109,7 @@ module ocn_rounding
         !$omp do schedule(runtime) private(k)
         do iCell = 1, nCells
            do k = 1, maxLevelCell(iCell)
-              layerThickness(k,iCell) = 0.0
+              layerThickness(k,iCell) = round(layerThickness(k, iCell), config_reduced_precision_digits)
               tracersGroup(indexTemperature, k, iCell) = 0.0
               tracersGroup(indexSalinity, k, iCell) = 0.0
            end do
@@ -120,7 +120,7 @@ module ocn_rounding
         do iEdge = 1, nEdges
            do k = 1, nVertLevels
               normalVelocity_val = normalVelocity(k, iEdge)
-              normalVelocity(k, iEdge) = round(normalVelocity_val, config_reduced_precision_digits)
+              normalVelocity(k, iEdge) = round(-123456.78912, config_reduced_precision_digits)
            end do
         end do
         !$omp end do
@@ -146,34 +146,28 @@ function round(var, digits)
      use ocn_constants
 
      implicit none
-        
+
      real(RKIND), intent(in) :: var
      integer, intent(in) :: digits
-     real(RKIND) :: mult, div, round, temp
-     integer :: nshift, n, shift
-     
-     print*, var
-     if (var <=  1E-12 .AND. var >= -1E-12) then
-        round = 0.0
-     else if (abs(var) >= 1.0) then
-        n = floor(log10(abs(var))) + 1
-        nshift = digits - n
+     real(RKIND) :: mult, div, round, absvar
+     integer :: nshift, n
+ 
+     ! delete: de print*, var
+     if (var == 0.0_RKIND) then
+        round = 0.0_RKIND
+     else
+        absvar = abs(var)
+        n = floor(log10(absvar)) + 1
+        nshift = min(12, digits - n)
         if (nshift >= 0) then
-           mult = 10.0 ** nshift
-           round = anint(var * mult) / mult
+           mult = 10.0_RKIND ** nshift
+           round = sign( anint(absvar * mult) / mult, var)
         else
-           div = 10.0 ** abs(nshift)
-           round = anint(var / div) * div
+           div = 10.0_RKIND ** abs(nshift)
+           round = sign( anint(absvar / div) * div, var)
         endif
-     else 
-        shift = abs(floor(log10(abs(var))))
-        temp = 10 ** shift * var
-        nshift = digits - 1
-        mult = 10.0 ** nshift
-        round = anint(temp * mult) / mult / (10 ** shift)
      end if
-     print*, round
-
+     print*, var, round
 end function round
 
 
