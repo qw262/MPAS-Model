@@ -110,8 +110,10 @@ module ocn_rounding
         do iCell = 1, nCells
            do k = 1, maxLevelCell(iCell)
               layerThickness(k,iCell) = round(layerThickness(k, iCell), config_reduced_precision_digits)
-              tracersGroup(indexTemperature, k, iCell) = 0.0
-              tracersGroup(indexSalinity, k, iCell) = 0.0
+              temperature_val = tracersGroup(indexTemperature, k, iCell)
+              tracersGroup(indexTemperature, k, iCell) = round(temperature_val, config_reduced_precision_digits)
+              salinity_val = tracersGroup(indexSalinity, k, iCell)
+              tracersGroup(indexSalinity, k, iCell) = round(salinity_val, config_reduced_precision_digits)
            end do
         end do
         !$omp end do
@@ -120,7 +122,7 @@ module ocn_rounding
         do iEdge = 1, nEdges
            do k = 1, nVertLevels
               normalVelocity_val = normalVelocity(k, iEdge)
-              normalVelocity(k, iEdge) = round(-123456.78912, config_reduced_precision_digits)
+              normalVelocity(k, iEdge) = round(normalVelocity_val, config_reduced_precision_digits)
            end do
         end do
         !$omp end do
@@ -152,7 +154,6 @@ function round(var, digits)
      real(RKIND) :: mult, div, round, absvar
      integer :: nshift, n
  
-     ! delete: de print*, var
      if (var == 0.0_RKIND) then
         round = 0.0_RKIND
      else
@@ -167,7 +168,6 @@ function round(var, digits)
            round = sign( anint(absvar / div) * div, var)
         endif
      end if
-     print*, var, round
 end function round
 
 
