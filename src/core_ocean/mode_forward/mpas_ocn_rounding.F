@@ -154,17 +154,17 @@ function round(var, digits)
      real(RKIND) :: mult, div, round, absvar
      integer :: nshift, n
  
-     if (var == 0.0_RKIND) then
-        round = 0.0_RKIND
+     if (var == 0.0) then
+        round = 0.0
      else
         absvar = abs(var)
         n = floor(log10(absvar)) + 1
-        nshift = min(12, digits - n)
+        nshift = min(15, digits - n)
         if (nshift >= 0) then
-           mult = 10.0_RKIND ** nshift
+           mult = 10.0 ** nshift
            round = sign( anint(absvar * mult) / mult, var)
         else
-           div = 10.0_RKIND ** abs(nshift)
+           div = 10.0 ** nshift
            round = sign( anint(absvar / div) * div, var)
         endif
      end if
