@@ -1,6 +1,6 @@
 ! Copyright (c) 2013,  Los Alamos National Security, LLC (LANS)
 ! and the University Corporation for Atmospheric Research (UCAR).
-!
+! 
 ! Unless noted otherwise source code is licensed under the BSD license.
 ! Additional copyright and license information can be found in the LICENSE file
 ! distributed with this code, or at http://mpas-dev.github.com/license.html
@@ -115,9 +115,11 @@ module ocn_time_integration
      
      call mpas_pool_get_config(domain % configs, 'config_use_reduced_precision', config_use_reduced_precision)
      call mpas_pool_get_config(domain % configs, 'config_reduced_precision_digits', config_reduced_precision_digits)
-
+    
      if (config_use_reduced_precision) then
+        call mpas_timer_start("rounding")
         call rounding(domain, config_reduced_precision_digits)
+        call mpas_timer_stop("rounding")
      endif
     
      block => domain % blocklist
